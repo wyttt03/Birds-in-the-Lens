@@ -45,6 +45,14 @@ public class BirdWatchingCamera : MonoBehaviour
     public Camera ViewCamera => viewCamera;
 
     public float FocusDistance => focusDistance;
+    private bool controlsLocked;
+    [Header("Look Limits")]
+    [Tooltip("Degrees the view may turn left and right from the starting direction.")]
+    [SerializeField] private float yawRange = 45f;
+    [SerializeField] private float pitchMin = -15f;
+    [SerializeField] private float pitchMax = 30f;
+
+    private float startYaw;
 
     public float Magnification
     {
@@ -85,6 +93,7 @@ public class BirdWatchingCamera : MonoBehaviour
         }
 
         yaw = transform.eulerAngles.y;
+        startYaw = yaw;
 
         pitch = Mathf.DeltaAngle(
             0f,
@@ -132,7 +141,11 @@ public class BirdWatchingCamera : MonoBehaviour
         {
             return;
         }
-
+        // Ignore all camera input while locked, for example during a perch flight.
+        if (controlsLocked)
+        {
+            return;
+        }
         UpdateLook(mouseDelta);
         UpdateZoom(scroll);
         UpdateFocus(focusInput);
@@ -144,7 +157,8 @@ public class BirdWatchingCamera : MonoBehaviour
         yaw += mouseDelta.x * mouseSensitivity;
         pitch -= mouseDelta.y * mouseSensitivity;
 
-        pitch = Mathf.Clamp(pitch, -pitchLimit, pitchLimit);
+        yaw = Mathf.Clamp(yaw, startYaw - yawRange, startYaw + yawRange);
+        pitch = Mathf.Clamp(pitch, pitchMin, pitchMax);
 
         // Rotate the parent horizontally and the camera vertically.
         transform.rotation = Quaternion.Euler(0f, yaw, 0f);
@@ -226,7 +240,42 @@ public class BirdWatchingCamera : MonoBehaviour
             )
         );
     }
+    /// <summary>Blocks look, zoom and focus input, for example during a flight.</summary>
+    public void SetControlsLocked(bool locked)
+    {
+        controlsLocked = locked;
+    }
 
+    /// <summary>
+    /// Points the view in a new direction and makes it the center of the look limits.
+    /// Used when the viewer lands on a new perch.
+    /// </summary>
+    public void SetLookDirection(float newYaw, float newPitch, bool resetOptics)
+    {
+        if (viewCamera == null)
+        {
+            return;
+        }
+
+        yaw = newYaw;
+        startYaw = newYaw;
+        pitch = Mathf.Clamp(newPitch, pitchMin, pitchMax);
+
+        transform.rotation = Quaternion.Euler(0f, yaw, 0f);
+        viewCamera.transform.localRotation = Quaternion.Euler(pitch, 0f, 0f);
+
+        if (resetOptics)
+        {
+            // A new viewpoint starts zoomed out with the default focus.
+            targetFov = normalFov;
+
+            focusDistance = Mathf.Clamp(
+                initialFocusDistance,
+                minimumFocusDistance,
+                maximumFocusDistance
+            );
+        }
+    }
     private void SetCursorLocked(bool locked)
     {
         Cursor.lockState = locked

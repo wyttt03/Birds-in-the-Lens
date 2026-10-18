@@ -171,6 +171,9 @@ MonoBehaviour:
   buttonIcon: {fileID: 691583064}
   buttonLabel: {fileID: 2059074682}
   bookPages: {fileID: 2010608245}
+  sfxSource: {fileID: 0}
+  openClip: {fileID: 0}
+  closeClip: {fileID: 0}
   closedBookSprite: {fileID: 0}
   openBookSprite: {fileID: 0}
   gameplayControls:

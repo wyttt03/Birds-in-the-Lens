@@ -57,7 +57,7 @@ public class BirdCallAudio : MonoBehaviour
         }
 
         // Stay silent if this bird was already photographed.
-        if (target != null && target.IsCaptured)
+        if (target != null && PhotoCapture.IsSpeciesCaptured(target.SpeciesId))
         {
             return;
         }
@@ -74,7 +74,9 @@ public class BirdCallAudio : MonoBehaviour
 
     private void HandleTargetPhotographed(PhotoTarget photographed)
     {
-        if (photographed != target || fadeRoutine != null)
+        if (target == null ||
+            photographed.SpeciesId != target.SpeciesId ||
+            fadeRoutine != null)
         {
             return;
         }
