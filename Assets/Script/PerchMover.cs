@@ -37,6 +37,14 @@ public class PerchMover : MonoBehaviour
     [SerializeField] private float arcHeight = 1f;
     [SerializeField] private AnimationCurve easing = AnimationCurve.EaseInOut(0f, 0f, 1f, 1f);
 
+    [Header("Hint Timing")]
+    [Tooltip("Seconds after the level starts before the hints appear and E works.")]
+    [SerializeField] private float hintDelayAtStart = 3f;
+
+    [Tooltip("Seconds after each landing before the hints appear again. 0 = right away.")]
+    [SerializeField] private float hintDelayAfterLanding = 0f;
+
+    private float hintsAllowedTime;
     [Header("Prompt")]
     [Tooltip("Optional object such as a text saying '[E] Fly here'. Shown when a perch can be targeted.")]
     [SerializeField] private GameObject promptObject;
@@ -68,6 +76,7 @@ public class PerchMover : MonoBehaviour
             parallax.Recalibrate(0f);
         }
         ValidateSetup();
+        hintsAllowedTime = Time.time + hintDelayAtStart;
         HideAllHints();
     }
 
@@ -83,7 +92,12 @@ public class PerchMover : MonoBehaviour
         {
             return;
         }
-
+        // Keep the hints hidden and ignore E until the delay has passed.
+        if (Time.time < hintsAllowedTime)
+        {
+            HideAllHints();
+            return;
+        }
         // Escape unlocks the cursor, which also pauses perch input.
         if (Cursor.lockState != CursorLockMode.Locked)
         {
@@ -234,6 +248,7 @@ public class PerchMover : MonoBehaviour
         }
 
         currentIndex = targetIndex;
+        hintsAllowedTime = Time.time + hintDelayAfterLanding;
 
         binocular.SetControlsLocked(false);
 

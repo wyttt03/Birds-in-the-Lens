@@ -276,6 +276,11 @@ public class BirdWatchingCamera : MonoBehaviour
             );
         }
     }
+    /// <summary>Changes how far the view may turn left and right from its center.</summary>
+    public void SetYawRange(float newYawRange)
+    {
+        yawRange = Mathf.Max(0f, newYawRange);
+    }
     private void SetCursorLocked(bool locked)
     {
         Cursor.lockState = locked

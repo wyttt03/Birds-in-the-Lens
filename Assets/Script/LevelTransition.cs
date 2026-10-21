@@ -2,16 +2,14 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
-using UnityEngine.Video;
-
-#if ENABLE_INPUT_SYSTEM
-using UnityEngine.InputSystem;
-#endif
 
 /// <summary>
-/// Ends a level: waits briefly, fades to black, plays an optional cutscene video,
-/// then loads the next scene. Call Begin() from LevelProgress.onLevelComplete.
-/// Also fades in from black when its own scene starts.
+/// Ends a level: waits briefly, fades the screen to a color, then loads the
+/// next scene in Build Settings. Also fades in when its own scene starts.
+/// The fade overlay is created by this script at runtime, so no canvas or
+/// image needs to be set up by hand.
+/// Call Begin() from LevelProgress.onLevelComplete.
+/// Keep this script on an object that is always active.
 /// </summary>
 public class LevelTransition : MonoBehaviour
 {
@@ -19,23 +17,14 @@ public class LevelTransition : MonoBehaviour
     [Tooltip("Build index of the next scene. -1 = the scene after this one in Build Settings.")]
     [SerializeField] private int nextSceneBuildIndex = -1;
 
-    [Header("Cutscene (optional)")]
-    [Tooltip("Leave empty for a level change without a video.")]
-    [SerializeField] private VideoClip cutsceneClip;
-    [SerializeField] private VideoPlayer videoPlayer;
-    [SerializeField] private AudioSource videoAudioSource;
-    [SerializeField] private RawImage videoImage;
-
-    [Tooltip("Press Space to skip the video. Useful while testing.")]
-    [SerializeField] private bool allowSkip = false;
-
     [Header("Fade")]
-    [Tooltip("Full-screen group with a black Image. Used for fade out and fade in.")]
-    [SerializeField] private CanvasGroup overlayGroup;
+    [Tooltip("Color of the fade, for example black or white.")]
+    [SerializeField] private Color fadeColor = Color.black;
     [SerializeField] private float fadeDuration = 0.8f;
     [SerializeField] private bool fadeInOnStart = true;
 
     [Header("Timing")]
+    [Tooltip("Seconds to wait after the last photo before the fade starts.")]
     [SerializeField] private float delayBeforeTransition = 1.5f;
 
     [Header("Gameplay To Stop")]
@@ -45,29 +34,33 @@ public class LevelTransition : MonoBehaviour
     [Tooltip("Other scripts to disable, for example the book UI and the perch mover.")]
     [SerializeField] private MonoBehaviour[] controlsToDisable;
 
+    private Canvas overlayCanvas;
+    private CanvasGroup overlayGroup;
     private bool started;
-    private RenderTexture videoTexture;
+    private Coroutine fadeInRoutine;
+
+    private void Awake()
+    {
+        BuildOverlay();
+
+        // Cover the screen right away so a new level never flashes uncovered.
+        overlayGroup.alpha = fadeInOnStart ? 1f : 0f;
+        overlayCanvas.enabled = fadeInOnStart;
+    }
 
     private void Start()
     {
-        if (fadeInOnStart && overlayGroup != null)
+        if (fadeInOnStart)
         {
-            StartCoroutine(FadeInAtStart());
+            fadeInRoutine = StartCoroutine(FadeInAtStart());
         }
     }
 
     private void OnDestroy()
     {
-        // AudioListener.pause is static and would otherwise survive the scene change.
-        if (started)
+        if (overlayCanvas != null)
         {
-            AudioListener.pause = false;
-        }
-
-        if (videoTexture != null)
-        {
-            videoTexture.Release();
-            Destroy(videoTexture);
+            Destroy(overlayCanvas.gameObject);
         }
     }
 
@@ -80,52 +73,110 @@ public class LevelTransition : MonoBehaviour
             return;
         }
 
-        started = true;
-        StartCoroutine(RunTransition());
-    }
-
-    private IEnumerator FadeInAtStart()
-    {
-        overlayGroup.alpha = 1f;
-
-        if (videoImage != null)
+        if (!gameObject.activeInHierarchy)
         {
-            videoImage.enabled = false;
+            Debug.LogError(
+                "LevelTransition cannot start because its object is inactive.", this);
+            return;
         }
 
-        yield return Fade(1f, 0f);
+        int nextIndex = FindNextSceneIndex();
 
-        overlayGroup.blocksRaycasts = false;
-        overlayGroup.gameObject.SetActive(false);
+        // Check first, so a setup problem never leaves the player frozen.
+        if (nextIndex < 0)
+        {
+            return;
+        }
+
+        started = true;
+
+        if (fadeInRoutine != null)
+        {
+            StopCoroutine(fadeInRoutine);
+            fadeInRoutine = null;
+        }
+
+        Debug.Log(
+            "[LevelTransition] " + SceneManager.GetActiveScene().name +
+            " -> scene index " + nextIndex, this);
+
+        StartCoroutine(RunTransition(nextIndex));
     }
 
-    private IEnumerator RunTransition()
+    // Builds a full-screen canvas above everything, holding one solid image.
+    private void BuildOverlay()
+    {
+        GameObject root = new GameObject("LevelFadeOverlay");
+
+        overlayCanvas = root.AddComponent<Canvas>();
+        overlayCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        overlayCanvas.sortingOrder = 32000;
+
+        overlayGroup = root.AddComponent<CanvasGroup>();
+        overlayGroup.interactable = false;
+        overlayGroup.blocksRaycasts = false;
+
+        GameObject imageObject = new GameObject("Fade");
+        imageObject.transform.SetParent(root.transform, false);
+
+        Image image = imageObject.AddComponent<Image>();
+        image.color = new Color(fadeColor.r, fadeColor.g, fadeColor.b, 1f);
+        image.raycastTarget = false;
+
+        RectTransform rect = image.rectTransform;
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = Vector2.zero;
+        rect.offsetMax = Vector2.zero;
+    }
+
+    private int FindNextSceneIndex()
+    {
+        int currentIndex = SceneManager.GetActiveScene().buildIndex;
+        int nextIndex = nextSceneBuildIndex;
+
+        if (nextIndex < 0)
+        {
+            // A scene missing from the Build Settings list reports index -1.
+            if (currentIndex < 0)
+            {
+                Debug.LogError(
+                    "LevelTransition: this scene is not in the Build Settings scene list " +
+                    "(or is unchecked), so the next scene cannot be found.", this);
+                return -1;
+            }
+
+            nextIndex = currentIndex + 1;
+        }
+
+        if (nextIndex >= SceneManager.sceneCountInBuildSettings)
+        {
+            Debug.LogError(
+                "LevelTransition: no scene with build index " + nextIndex +
+                ". Add the next scene to the Build Settings scene list.", this);
+            return -1;
+        }
+
+        return nextIndex;
+    }
+
+    private IEnumerator RunTransition(int nextIndex)
     {
         StopGameplay();
 
         yield return new WaitForSecondsRealtime(delayBeforeTransition);
 
-        int nextIndex = nextSceneBuildIndex >= 0
-            ? nextSceneBuildIndex
-            : SceneManager.GetActiveScene().buildIndex + 1;
-
-        if (nextIndex >= SceneManager.sceneCountInBuildSettings)
-        {
-            Debug.LogWarning(
-                "LevelTransition: no next scene in Build Settings (index " + nextIndex + ").",
-                this);
-            yield break;
-        }
-
         yield return Fade(0f, 1f);
 
-        if (cutsceneClip != null && videoPlayer != null && videoImage != null)
-        {
-            yield return PlayCutscene();
-        }
-
-        AudioListener.pause = false;
         SceneManager.LoadScene(nextIndex);
+    }
+
+    private IEnumerator FadeInAtStart()
+    {
+        yield return Fade(1f, 0f);
+
+        overlayCanvas.enabled = false;
+        fadeInRoutine = null;
     }
 
     private void StopGameplay()
@@ -156,13 +207,8 @@ public class LevelTransition : MonoBehaviour
 
     private IEnumerator Fade(float from, float to)
     {
-        if (overlayGroup == null)
-        {
-            yield break;
-        }
-
-        overlayGroup.gameObject.SetActive(true);
-        overlayGroup.blocksRaycasts = true;
+        overlayCanvas.enabled = true;
+        overlayGroup.alpha = from;
 
         float duration = Mathf.Max(fadeDuration, 0.01f);
         float elapsed = 0f;
@@ -175,84 +221,5 @@ public class LevelTransition : MonoBehaviour
         }
 
         overlayGroup.alpha = to;
-    }
-
-    private IEnumerator PlayCutscene()
-    {
-        // Silence the game and keep only the video's own audio.
-        AudioListener.pause = true;
-
-        if (videoAudioSource != null)
-        {
-            videoAudioSource.ignoreListenerPause = true;
-        }
-
-        videoPlayer.playOnAwake = false;
-        videoPlayer.isLooping = false;
-        videoPlayer.source = VideoSource.VideoClip;
-        videoPlayer.clip = cutsceneClip;
-        videoPlayer.renderMode = VideoRenderMode.RenderTexture;
-
-        // Create the render texture at the video's native size.
-        videoTexture = new RenderTexture(
-            (int)cutsceneClip.width, (int)cutsceneClip.height, 0);
-
-        videoPlayer.targetTexture = videoTexture;
-        videoImage.texture = videoTexture;
-        videoImage.enabled = false;
-
-        AspectRatioFitter fitter = videoImage.GetComponent<AspectRatioFitter>();
-
-        if (fitter != null)
-        {
-            fitter.aspectRatio = (float)cutsceneClip.width / cutsceneClip.height;
-        }
-
-        if (videoAudioSource != null)
-        {
-            videoPlayer.audioOutputMode = VideoAudioOutputMode.AudioSource;
-            videoPlayer.SetTargetAudioSource(0, videoAudioSource);
-        }
-
-        videoPlayer.Prepare();
-
-        while (!videoPlayer.isPrepared)
-        {
-            yield return null;
-        }
-
-        bool finished = false;
-        videoPlayer.loopPointReached += _ => finished = true;
-        videoPlayer.Play();
-
-        // Show the image only after the first frames arrive, to avoid a flash.
-        while (videoPlayer.frame < 1 && !finished)
-        {
-            yield return null;
-        }
-
-        videoImage.enabled = true;
-
-        while (!finished)
-        {
-            if (allowSkip && IsSkipPressed())
-            {
-                break;
-            }
-
-            yield return null;
-        }
-
-        videoPlayer.Stop();
-    }
-
-    private bool IsSkipPressed()
-    {
-#if ENABLE_INPUT_SYSTEM
-        Keyboard keyboard = Keyboard.current;
-        return keyboard != null && keyboard.spaceKey.wasPressedThisFrame;
-#else
-        return Input.GetKeyDown(KeyCode.Space);
-#endif
     }
 }
