@@ -377,7 +377,7 @@ VideoPlayer:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 836068825}
   m_Enabled: 1
-  m_VideoClip: {fileID: 0}
+  m_VideoClip: {fileID: 32900000, guid: 6b00ad947bc6c3d4dbe7c3faf61599e1, type: 3}
   m_TargetCameraAlpha: 1
   m_TargetCamera3DLayout: 0
   m_TargetCamera: {fileID: 0}
@@ -391,14 +391,12 @@ VideoPlayer:
   m_TimeUpdateMode: 2
   m_PlaybackSpeed: 1
   m_AudioOutputMode: 2
-  m_TargetAudioSources:
-  - {fileID: 0}
-  m_DirectAudioVolumes:
-  - 1
+  m_TargetAudioSources: []
+  m_DirectAudioVolumes: []
   m_Url: 
-  m_EnabledAudioTracks: 01
-  m_DirectAudioMutes: 00
-  m_ControlledAudioTrackCount: 1
+  m_EnabledAudioTracks: 
+  m_DirectAudioMutes: 
+  m_ControlledAudioTrackCount: 0
   m_PlayOnAwake: 0
   m_SkipOnDrop: 1
   m_Looping: 0
@@ -449,7 +447,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d974e90d0a8088d4aaaca700489ebf7f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CutscenePlayer
-  clip: {fileID: 32900000, guid: f43ca39ab43e6f04c9c5488b7dad1f22, type: 3}
+  clip: {fileID: 32900000, guid: 6b00ad947bc6c3d4dbe7c3faf61599e1, type: 3}
   videoPlayer: {fileID: 836068827}
   audioSource: {fileID: 836068826}
   videoImage: {fileID: 470397572}
