@@ -45,6 +45,18 @@ public class BirdWatchingCamera : MonoBehaviour
     public Camera ViewCamera => viewCamera;
 
     public float FocusDistance => focusDistance;
+    /// <summary>0 at the nearest focus (the A end), 1 at the farthest focus (the D end).</summary>
+    public float FocusPosition01
+    {
+        get
+        {
+            float minimum = Mathf.Max(minimumFocusDistance, 0.0001f);
+            float maximum = Mathf.Max(maximumFocusDistance, minimum * 1.0001f);
+            float clamped = Mathf.Clamp(focusDistance, minimum, maximum);
+
+            return Mathf.Log(clamped / minimum) / Mathf.Log(maximum / minimum);
+        }
+    }
     private bool controlsLocked;
     [Header("Look Limits")]
     [Tooltip("Degrees the view may turn left and right from the starting direction.")]

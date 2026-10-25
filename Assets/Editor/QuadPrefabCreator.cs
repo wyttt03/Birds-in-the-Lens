@@ -4,148 +4,92 @@ using UnityEngine;
 using UnityEngine.Rendering;
 
 /// <summary>
-/// Right-click one or more textures in the Project window to create ready-to-use
-/// Quad prefabs. Each gets an Unlit, Opaque, Alpha Clipping material.
+/// Right-click one or more textures (or a folder of textures) in the Project window
+/// to create a ready-to-use material for each one: URP Unlit, Opaque, Alpha Clipping.
+/// It also sets the import options a cutout texture needs.
 /// Keep this file inside a folder named Editor.
 /// </summary>
-public static class QuadPrefabCreator
+public static class TextureMaterialCreator
 {
-    private enum Mode
-    {
-        BottomPivot,
-        CenterPivot,
-        BottomPivotBillboard,
-        FallingItem
-    }
+    private const string MenuPath = "Assets/Create/2D Materials/From Selected Textures";
 
-    private const string OutputFolder = "Assets/Prefabs/Quads";
-
-    // 100 pixels = 1 meter. A 512 pixel tall tree becomes 5.12 meters tall.
-    private const float DefaultPixelsPerUnit = 100f;
-
-    // Falling items are small, so 1000 pixels = 1 meter. A 300 pixel leaf becomes 0.3 meters.
-    private const float ItemPixelsPerUnit = 1000f;
-
+    // Pixels with alpha below this value are cut away.
     private const float AlphaCutoff = 0.3f;
 
-    [MenuItem("Assets/Create/2D Quad Prefabs/Standing (bottom pivot)")]
-    private static void CreateStanding()
+    // The menu item is only enabled while at least one texture is selected.
+    [MenuItem(MenuPath, true)]
+    private static bool ValidateCreateMaterials()
     {
-        Create(Mode.BottomPivot);
+        return Selection.GetFiltered<Texture2D>(SelectionMode.DeepAssets).Length > 0;
     }
 
-    [MenuItem("Assets/Create/2D Quad Prefabs/Centered (center pivot)")]
-    private static void CreateCentered()
+    [MenuItem(MenuPath)]
+    private static void CreateMaterials()
     {
-        Create(Mode.CenterPivot);
-    }
+        Texture2D[] textures = Selection.GetFiltered<Texture2D>(SelectionMode.DeepAssets);
 
-    [MenuItem("Assets/Create/2D Quad Prefabs/Standing + camera-facing")]
-    private static void CreateStandingBillboard()
-    {
-        Create(Mode.BottomPivotBillboard);
-    }
+        int created = 0;
+        int skipped = 0;
+        Material lastCreated = null;
 
-    [MenuItem("Assets/Create/2D Quad Prefabs/Falling item")]
-    private static void CreateFallingItem()
-    {
-        Create(Mode.FallingItem);
-    }
-
-    private static void Create(Mode mode)
-    {
-        Texture2D[] textures = Selection.GetFiltered<Texture2D>(SelectionMode.Assets);
-
-        if (textures.Length == 0)
+        foreach (Texture2D selected in textures)
         {
-            Debug.LogWarning("Select one or more textures in the Project window first.");
-            return;
-        }
+            string texturePath = AssetDatabase.GetAssetPath(selected);
 
-        EnsureFolder(OutputFolder);
+            // Ignore textures that live inside packages.
+            if (!texturePath.StartsWith("Assets/"))
+            {
+                continue;
+            }
 
-        GameObject lastPrefab = null;
+            PrepareTexture(texturePath);
 
-        foreach (Texture2D texture in textures)
-        {
-            lastPrefab = CreateOne(texture, mode);
+            // Reload, because the texture is reimported when its settings change.
+            Texture2D texture = AssetDatabase.LoadAssetAtPath<Texture2D>(texturePath);
+
+            string folder = Path.GetDirectoryName(texturePath).Replace('\\', '/');
+            string materialPath = folder + "/Mat_" + texture.name + ".mat";
+
+            // Never overwrite a material that already exists.
+            if (AssetDatabase.LoadAssetAtPath<Material>(materialPath) != null)
+            {
+                skipped++;
+                continue;
+            }
+
+            Material material = BuildMaterial(texture);
+
+            if (material == null)
+            {
+                return;
+            }
+
+            AssetDatabase.CreateAsset(material, materialPath);
+            lastCreated = material;
+            created++;
         }
 
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
 
-        if (lastPrefab != null)
+        if (lastCreated != null)
         {
-            EditorGUIUtility.PingObject(lastPrefab);
+            EditorGUIUtility.PingObject(lastCreated);
         }
 
-        Debug.Log("Created " + textures.Length + " prefab(s) in " + OutputFolder);
+        Debug.Log(
+            "Materials created: " + created +
+            ". Already existed and skipped: " + skipped + ".");
     }
 
-    private static GameObject CreateOne(Texture2D texture, Mode mode)
-    {
-        string texturePath = AssetDatabase.GetAssetPath(texture);
-        float pixelsPerUnit = PrepareTexture(texturePath);
-
-        if (mode == Mode.FallingItem)
-        {
-            pixelsPerUnit = ItemPixelsPerUnit;
-        }
-
-        Material material = GetOrCreateMaterial(texture, texturePath);
-
-        float width = texture.width / pixelsPerUnit;
-        float height = texture.height / pixelsPerUnit;
-
-        GameObject root = new GameObject(texture.name);
-        GameObject visual = GameObject.CreatePrimitive(PrimitiveType.Quad);
-        visual.name = "Visual";
-
-        // Colliders are not needed and only add cost.
-        Object.DestroyImmediate(visual.GetComponent<Collider>());
-
-        visual.transform.SetParent(root.transform, false);
-        visual.transform.localScale = new Vector3(width, height, 1f);
-        visual.GetComponent<MeshRenderer>().sharedMaterial = material;
-
-        // Bottom pivot: the root sits at the feet and the art stands on top of it.
-        bool bottomPivot = mode == Mode.BottomPivot || mode == Mode.BottomPivotBillboard;
-        visual.transform.localPosition = bottomPivot
-            ? new Vector3(0f, height * 0.5f, 0f)
-            : Vector3.zero;
-
-        if (mode == Mode.BottomPivotBillboard)
-        {
-            root.AddComponent<BillboardToCamera>();
-        }
-
-        if (mode == Mode.FallingItem)
-        {
-            FallingItem item = root.AddComponent<FallingItem>();
-
-            // The Visual field is private, so set it through the serialized object.
-            SerializedObject serialized = new SerializedObject(item);
-            serialized.FindProperty("visual").objectReferenceValue = visual.transform;
-            serialized.ApplyModifiedPropertiesWithoutUndo();
-        }
-
-        string prefabPath = AssetDatabase.GenerateUniqueAssetPath(
-            OutputFolder + "/" + texture.name + ".prefab");
-
-        GameObject prefab = PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
-        Object.DestroyImmediate(root);
-
-        return prefab;
-    }
-
-    // Sets the import options a cutout texture needs. Returns the pixels per unit to use.
-    private static float PrepareTexture(string path)
+    // Sets the import options a cutout texture needs.
+    private static void PrepareTexture(string path)
     {
         TextureImporter importer = AssetImporter.GetAtPath(path) as TextureImporter;
 
         if (importer == null)
         {
-            return DefaultPixelsPerUnit;
+            return;
         }
 
         bool changed = false;
@@ -156,6 +100,7 @@ public static class QuadPrefabCreator
             changed = true;
         }
 
+        // Mip maps blend neighboring pixels and cause colored edges on cutouts.
         if (importer.mipmapEnabled)
         {
             importer.mipmapEnabled = false;
@@ -172,26 +117,10 @@ public static class QuadPrefabCreator
         {
             importer.SaveAndReimport();
         }
-
-        // Textures already set up as sprites keep their own pixels per unit.
-        return importer.textureType == TextureImporterType.Sprite
-            ? importer.spritePixelsPerUnit
-            : DefaultPixelsPerUnit;
     }
 
-    private static Material GetOrCreateMaterial(Texture2D texture, string texturePath)
+    private static Material BuildMaterial(Texture2D texture)
     {
-        string folder = Path.GetDirectoryName(texturePath).Replace('\\', '/');
-        string materialPath = folder + "/Mat_" + texture.name + ".mat";
-
-        // Reuse the material if this texture was processed before.
-        Material existing = AssetDatabase.LoadAssetAtPath<Material>(materialPath);
-
-        if (existing != null)
-        {
-            return existing;
-        }
-
         Shader shader = Shader.Find("Universal Render Pipeline/Unlit");
 
         if (shader == null)
@@ -212,25 +141,6 @@ public static class QuadPrefabCreator
         material.SetOverrideTag("RenderType", "TransparentCutout");
         material.renderQueue = (int)RenderQueue.AlphaTest;
 
-        AssetDatabase.CreateAsset(material, materialPath);
         return material;
-    }
-
-    private static void EnsureFolder(string path)
-    {
-        string[] parts = path.Split('/');
-        string current = parts[0];
-
-        for (int i = 1; i < parts.Length; i++)
-        {
-            string next = current + "/" + parts[i];
-
-            if (!AssetDatabase.IsValidFolder(next))
-            {
-                AssetDatabase.CreateFolder(current, parts[i]);
-            }
-
-            current = next;
-        }
     }
 }
