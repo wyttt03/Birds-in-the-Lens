@@ -449,7 +449,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: d974e90d0a8088d4aaaca700489ebf7f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CutscenePlayer
-  clip: {fileID: 32900000, guid: a8a7503d53abf2048b0a138266dbc05f, type: 3}
+  clip: {fileID: 32900000, guid: b83b6d08faea41d44926401474f8b74d, type: 3}
   videoPlayer: {fileID: 836068827}
   audioSource: {fileID: 836068826}
   videoImage: {fileID: 470397572}
